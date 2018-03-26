@@ -42,7 +42,7 @@ class Reservoir(nn.Module):
                 setattr(self, name, param)
             self._all_weights.append(param_names)
 
-            self.reset_parameters()
+        self.reset_parameters()
 
     def _apply(self, fn):
         ret = super(Reservoir, self)._apply(fn)
@@ -60,9 +60,22 @@ class Reservoir(nn.Module):
                 nn.init.uniform(value, -1, 1)
                 value *= self.w_ih_scale[0]
             elif re.fullmatch('weight_hh_l[0-9]*', key):
-                nn.init.sparse(value, 1 - self.density)
-                value *= (self.spectral_radius / torch.max(
+                w_hh = torch.Tensor(self.hidden_size * self.hidden_size)
+                w_hh.uniform_(-1, 1)
+                if self.density < 1:
+                    zero_weights = torch.rand(
+                        self.hidden_size * self.hidden_size)
+                    zero_weights *= (self.hidden_size * self.hidden_size * (
+                                1 - self.density))
+                    zero_weights = zero_weights.long()
+                    if value.is_cuda:
+                        zero_weights = zero_weights.cuda()
+                    w_hh[zero_weights] = 0
+                w_hh = w_hh.view(self.hidden_size, self.hidden_size)
+                weight_dict[key] = w_hh * (self.spectral_radius / torch.max(
                     torch.abs(torch.eig(value)[0])))
+
+        self.load_state_dict(weight_dict)
 
     def check_forward_args(self, input, hidden, batch_sizes):
         is_input_packed = batch_sizes is not None
