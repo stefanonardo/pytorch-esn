@@ -36,20 +36,20 @@ class ESN(nn.Module):
             using SVD. If 'online', gradients are accumulated during backward
             pass.
 
-    Inputs: input, h_0, target, washout
+    Inputs: input, h_0, washout, target
         input (seq_len, batch, input_size): tensor containing the features of
             the input sequence. The input can also be a packed variable length
             sequence. See `torch.nn.utils.rnn.pack_padded_sequence`
         h_0 (num_layers * num_directions, batch, hidden_size): tensor containing
              the initial reservoir's hidden state for each element in the batch.
              Defaults to zero if not provided.
+        washout: number of initial timesteps during which output of the
+            reservoir is not forwarded to the readout.
         target (seq_len*batch - washout*batch, output_size): tensor containing
             the features of the batch's target sequences rolled out along one
             axis, minus the washouts and the padded values. It is only needed
             for readout's training in offline mode. Use `prepare_target` to
             compute it.
-        washout: number of initial timesteps during which output of the
-            reservoir is not forwarded to the readout.
 
     Outputs: output, h_n
         - output (seq_len, batch, hidden_size): tensor containing the output
@@ -102,7 +102,7 @@ class ESN(nn.Module):
         if readout_training == 'offline':
             self.readout.weight.requires_grad = False
 
-    def forward(self, input, h_0, target=None, washout=0):
+    def forward(self, input, h_0, washout=0, target=None):
         is_packed = isinstance(input, PackedSequence)
 
         output, hidden = self.reservoir(input, h_0)

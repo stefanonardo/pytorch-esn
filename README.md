@@ -12,16 +12,21 @@ PyTorch-ESN is a PyTorch module implementing an Echo State Network with leaky-in
 ### Offline training (ridge regression)
 
 ```
-import torchesn.nn
+from torchesn.nn import ESN
+from torchesn.utils import prepare_target
 
-model = torchesn.nn.ESN(input_size, hidden_size, output_size)
+# prepare target matrix for offline training
+flat_target = prepare_target(target, seq_lengths, washout)
 
-output, hidden = model(input, hidden, target, washout)
+model = ESN(input_size, hidden_size, output_size)
+
+output, hidden = model(input, hidden, washout, flat_target)
 ```
-Then, if you want a prediction, pass None to target parameter.
+
+Then, if you want a prediction on the trained model, do not supply a value for the target.
 
 ```
-output, hidden = model(input, hidden, None, washout)
+output, hidden = model(input, hidden, washout)
 ```
 
 ### Online training (PyTorch optimizer)
