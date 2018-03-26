@@ -5,7 +5,6 @@ PyTorch-ESN is a PyTorch module implementing an Echo State Network with leaky-in
 ## Prerequisites
 
 * PyTorch
-* NumPy
 
 ## Basic Usage
 
