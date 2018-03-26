@@ -74,7 +74,7 @@ class Reservoir(nn.Module):
                     w_hh[zero_weights] = 0
                 w_hh = w_hh.view(self.hidden_size, self.hidden_size)
                 weight_dict[key] = w_hh * (self.spectral_radius / torch.max(
-                    torch.abs(torch.eig(value)[0])))
+                    torch.abs(torch.eig(w_hh)[0])))
 
         self.load_state_dict(weight_dict)
 
