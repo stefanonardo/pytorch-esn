@@ -63,10 +63,10 @@ class Reservoir(nn.Module):
                 w_hh = torch.Tensor(self.hidden_size * self.hidden_size)
                 w_hh.uniform_(-1, 1)
                 if self.density < 1:
-                    zero_weights = torch.rand(
-                        self.hidden_size * self.hidden_size)
-                    zero_weights *= (self.hidden_size * self.hidden_size * (
-                                1 - self.density))
+                    zero_weights = torch.rand(round(
+                        self.hidden_size * self.hidden_size * (
+                                    1 - self.density)))
+                    zero_weights *= (self.hidden_size * self.hidden_size)
                     zero_weights = zero_weights.long()
                     if value.is_cuda:
                         zero_weights = zero_weights.cuda()
