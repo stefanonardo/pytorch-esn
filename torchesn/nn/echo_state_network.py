@@ -128,7 +128,8 @@ class ESN(nn.Module):
                     padded_input = padded_input.transpose(0, 1)
                 output = torch.cat([padded_input[washout:], output], -1)
             else:
-                input = input.transpose(0, 1)
+                if self.batch_first:
+                    input = input.transpose(0, 1)
                 output = torch.cat([input[washout:], output], -1)
 
         if self.readout_training == 'online' or target is None:

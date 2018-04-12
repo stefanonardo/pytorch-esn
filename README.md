@@ -10,7 +10,7 @@ PyTorch-ESN is a PyTorch module implementing Echo State Networks with leaky-inte
 
 ### Offline training (ridge regression)
 
-```
+```python
 from torchesn.nn import ESN
 from torchesn.utils import prepare_target
 
