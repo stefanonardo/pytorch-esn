@@ -50,9 +50,9 @@ model.fit()
 output, hidden = model(input, washout, hidden)
 ```
 
-#### Classification task
+#### Classification tasks
 For classification, just use one of the previous methods and pass 'mean' or
-'last' to ```output_steps``` option.
+'last' to ```output_steps``` argument.
 
 ```python
 model = ESN(input_size, hidden_size, output_size, output_steps='mean')
