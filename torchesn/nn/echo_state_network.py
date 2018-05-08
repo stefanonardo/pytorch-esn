@@ -3,7 +3,8 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.utils.rnn import PackedSequence, pad_packed_sequence
 from .reservoir import Reservoir
-from ..utils import ridge_regression
+from ..utils import washout_tensor
+import re
 
 
 class ESN(nn.Module):
@@ -30,21 +31,33 @@ class ESN(nn.Module):
         density: Recurrent weight matrix's density. Default: 1
         w_io: If 'True', then the network uses trainable input-to-output
             connections. Default: ``False``
-        readout_training: Readout's traning algorithm ['offline'|'online']. If
-            'offline', the network will learn readout's parameters during the
-            forward pass using ridge regression. The coefficients are computed
-            using SVD. If 'online', gradients are accumulated during backward
-            pass.
+        readout_training: Readout's traning algorithm ['gd'|'svd'|'ch'].
+            If 'gd', gradients are accumulated during backward
+            pass. If 'svd' or 'cholesky', the network will learn readout's
+            parameters during the forward pass using ridge regression. The
+            coefficients are computed using SVD or Cholesky decomposition.
+            Gradient descent and Cholesky decomposition permit the usage
+            of mini-batches to train the readout.
+        output_steps: defines how the reservoir's output will be used by ridge
+            regression method ['all', 'mean', 'last'].
+            If 'all', the entire reservoir output matrix will be used.
+            If 'mean', the mean of reservoir output matrix along the timesteps
+            dimension will be used.
+            If 'last', only the last timestep of the reservoir output matrix
+            will be used.
+            'mean' and 'last' are useful for classification tasks.
 
-    Inputs: input, h_0, washout, target
+    Inputs: input, washout, h_0, target
         input (seq_len, batch, input_size): tensor containing the features of
             the input sequence. The input can also be a packed variable length
             sequence. See `torch.nn.utils.rnn.pack_padded_sequence`
-        h_0 (num_layers * num_directions, batch, hidden_size): tensor containing
+        washout (batch): number of initial timesteps during which output of the
+            reservoir is not forwarded to the readout. One value per batch's
+            sample.
+        h_0 (num_layers, batch, hidden_size): tensor containing
              the initial reservoir's hidden state for each element in the batch.
              Defaults to zero if not provided.
-        washout: number of initial timesteps during which output of the
-            reservoir is not forwarded to the readout.
+
         target (seq_len*batch - washout*batch, output_size): tensor containing
             the features of the batch's target sequences rolled out along one
             axis, minus the washouts and the padded values. It is only needed
@@ -59,11 +72,9 @@ class ESN(nn.Module):
     """
 
     def __init__(self, input_size, hidden_size, output_size, num_layers=1,
-                 nonlinearity='tanh',
-                 batch_first=False, leaking_rate=1, spectral_radius=0.9,
-                 w_ih_scale=1,
-                 lambda_reg=0, density=1, w_io=False,
-                 readout_training='offline'):
+                 nonlinearity='tanh', batch_first=False, leaking_rate=1,
+                 spectral_radius=0.9, w_ih_scale=1, lambda_reg=0, density=1,
+                 w_io=False, readout_training='svd', output_steps='all'):
         super(ESN, self).__init__()
 
         self.input_size = input_size
@@ -84,7 +95,7 @@ class ESN(nn.Module):
         self.lambda_reg = lambda_reg
         self.density = density
         self.w_io = w_io
-        if readout_training == 'offline' or readout_training == 'online':
+        if re.fullmatch('gd|svd|cholesky', readout_training):
             self.readout_training = readout_training
         else:
             raise ValueError("Unknown readout training algorithm '{}'".format(
@@ -102,76 +113,122 @@ class ESN(nn.Module):
         if readout_training == 'offline':
             self.readout.weight.requires_grad = False
 
-    def forward(self, input, h_0, washout=0, target=None):
-        is_packed = isinstance(input, PackedSequence)
-
-        output, hidden = self.reservoir(input, h_0)
-        if is_packed:
-            output, seq_lengths = pad_packed_sequence(output,
-                                                      batch_first=self.batch_first)
-            seq_lengths = [x - washout for x in seq_lengths]
+        if re.fullmatch('all|mean|last', output_steps):
+            self.output_steps = output_steps
         else:
-            if self.batch_first:
-                seq_lengths = output.size(0) * [output.size(1) - washout]
-            else:
-                seq_lengths = output.size(1) * [output.size(0) - washout]
+            raise ValueError("Unknown task '{}'".format(
+                output_steps))
 
-        if self.batch_first:
-            output = output.transpose(0, 1)
-        output = output[washout:]
+        self.XTX = None
+        self.XTy = None
 
-        if self.w_io:
+    def forward(self, input, washout, h_0=None, target=None):
+        with torch.no_grad():
+            is_packed = isinstance(input, PackedSequence)
+
+            output, hidden = self.reservoir(input, h_0)
             if is_packed:
-                padded_input, _ = pad_packed_sequence(input,
-                                                      batch_first=self.batch_first)
-                if self.batch_first:
-                    padded_input = padded_input.transpose(0, 1)
-                output = torch.cat([padded_input[washout:], output], -1)
+                output, seq_lengths = pad_packed_sequence(output,
+                                                          batch_first=self.batch_first)
             else:
                 if self.batch_first:
-                    input = input.transpose(0, 1)
-                output = torch.cat([input[washout:], output], -1)
+                    seq_lengths = output.size(0) * [output.size(1) - washout]
+                else:
+                    seq_lengths = output.size(1) * [output.size(0) - washout]
 
-        if self.readout_training == 'online' or target is None:
-            output = self.readout(output)
+            if self.batch_first:
+                output = output.transpose(0, 1)
 
-        elif self.readout_training == 'offline' and target is not None:
-            batch_size = output.size(1)
+            output, seq_lengths = washout_tensor(output, washout, seq_lengths)
 
             if self.w_io:
-                X = torch.ones(target.size(0),
-                               1 + self.input_size + self.hidden_size * self.num_layers)
+                if is_packed:
+                    input, input_lengths = pad_packed_sequence(input,
+                                                          batch_first=self.batch_first)
+                else:
+                    input_lengths = [input.size(0)] * input.size(1)
+
+                if self.batch_first:
+                    input = input.transpose(0, 1)
+
+                input, _ = washout_tensor(input, washout, input_lengths)
+                output = torch.cat([input, output], -1)
+
+            if self.readout_training == 'gd' or target is None:
+                with torch.enable_grad():
+                    output = self.readout(output)
+
+                    if is_packed:
+                        for i in range(output.size(1)):
+                            if seq_lengths[i] < output.size(0):
+                                output[seq_lengths[i]:, i] = 0
+
+                    return output, hidden
+
             else:
-                X = torch.ones(target.size(0),
-                               1 + self.hidden_size * self.num_layers)
+                batch_size = output.size(1)
 
-            col = 0
-            for s in range(batch_size):
-                X[col:col + seq_lengths[s], 1:] = output[:seq_lengths[s],
-                                                  s].data
-                col += seq_lengths[s]
+                X = torch.ones(target.size(0), 1 + output.size(2), device=target.device)
+                row = 0
+                for s in range(batch_size):
+                    if self.output_steps == 'all':
+                        X[row:row + seq_lengths[s], 1:] = output[:seq_lengths[s],
+                                                          s]
+                        row += seq_lengths[s]
+                    elif self.output_steps == 'mean':
+                        X[row, 1:] = torch.mean(output[:seq_lengths[s], s], 0)
+                        row += 1
+                    elif self.output_steps == 'last':
+                        X[row, 1:] = output[seq_lengths[s] - 1, s]
+                        row += 1
 
-            W = ridge_regression(X, target, self.lambda_reg).t()
+                if self.readout_training == 'cholesky':
+                    if self.XTX is None:
+                        self.XTX = torch.mm(X.t(), X)
+                        self.XTy = torch.mm(X.t(), target)
+                    else:
+                        self.XTX += torch.mm(X.t(), X)
+                        self.XTy += torch.mm(X.t(), target)
+
+                elif self.readout_training == 'svd':
+                    # Scikit-Learn SVD solver for ridge regression.
+                    U, s, V = torch.svd(X)
+                    idx = s > 1e-15  # same default value as scipy.linalg.pinv
+                    s_nnz = s[idx][:, None]
+                    UTy = torch.mm(U.t(), target)
+                    d = torch.zeros(s.size(0), 1, device=X.device)
+                    d[idx] = s_nnz / (s_nnz ** 2 + self.lambda_reg)
+                    d_UT_y = d * UTy
+                    W = torch.mm(V, d_UT_y).t()
+
+                    self.readout.bias = nn.Parameter(W[:, 0])
+                    self.readout.weight = nn.Parameter(W[:, 1:])
+
+                return None, None
+
+            if self.batch_first:
+                output = output.transpose(0, 1)
+
+            # Uncomment if you want packed output.
+            # if is_packed:
+            #     output = pack_padded_sequence(output, seq_lengths,
+            #                                   batch_first=self.batch_first)
+
+            return output, hidden
+
+    def fit(self):
+        if re.fullmatch('gd|svd', self.readout_training):
+            return
+
+        if self.readout_training == 'cholesky':
+            W = torch.gesv(self.XTy,
+                           self.XTX + self.lambda_reg * torch.eye(
+                               self.XTX.size(0), device=self.XTX.device))[0].t()
+            self.XTX = None
+            self.XTy = None
+
             self.readout.bias = nn.Parameter(W[:, 0])
             self.readout.weight = nn.Parameter(W[:, 1:])
-
-            flat_output = self.readout(Variable(X[:, 1:]))
-
-            output = torch.zeros((seq_lengths[0], batch_size, self.output_size))
-            col = 0
-            for s in range(batch_size):
-                output[:seq_lengths[s], s] = flat_output[
-                                             col:col + seq_lengths[s]].data
-                col += seq_lengths[s]
-            output = Variable(output)
-
-        if self.batch_first:
-            output = output.transpose(0, 1)
-        # if is_packed:
-        #     output = pack_padded_sequence(output, seq_lengths,
-        #                                   batch_first=self.batch_first)
-
-        return output, hidden
 
     def reset_parameters(self):
         self.reservoir.reset_parameters()

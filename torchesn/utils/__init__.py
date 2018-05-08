@@ -1,4 +1,3 @@
-from .algorithms import ridge_regression
-from .aux import prepare_target
+from .aux import prepare_target, washout_tensor
 
-__all__ = ['ridge_regression', 'prepare_target']
+__all__ = ['prepare_target', 'washout_tensor']

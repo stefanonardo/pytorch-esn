@@ -3,13 +3,15 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torch.nn.utils.rnn import PackedSequence
+import random
+import torch.sparse
 
 
 class Reservoir(nn.Module):
 
     def __init__(self, mode, input_size, hidden_size, num_layers, leaking_rate,
                  spectral_radius, w_ih_scale,
-                 density, bias=True, batch_first=False, dropout=0):
+                 density, bias=True, batch_first=False):
         super(Reservoir, self).__init__()
         self.mode = mode
         self.input_size = input_size
@@ -21,8 +23,6 @@ class Reservoir(nn.Module):
         self.density = density
         self.bias = bias
         self.batch_first = batch_first
-        self.dropout = dropout
-        self.dropout_state = {}
 
         self._all_weights = []
         for layer in range(num_layers):
@@ -52,12 +52,12 @@ class Reservoir(nn.Module):
         weight_dict = self.state_dict()
         for key, value in weight_dict.items():
             if key == 'weight_ih_l0':
-                nn.init.uniform(value, -1, 1)
+                nn.init.uniform_(value, -1, 1)
                 value *= self.w_ih_scale[1:]
             elif re.fullmatch('weight_ih_l[^0]*', key):
-                nn.init.uniform(value, -1, 1)
+                nn.init.uniform_(value, -1, 1)
             elif re.fullmatch('bias_ih_l[0-9]*', key):
-                nn.init.uniform(value, -1, 1)
+                nn.init.uniform_(value, -1, 1)
                 value *= self.w_ih_scale[0]
             elif re.fullmatch('weight_hh_l[0-9]*', key):
                 w_hh = torch.Tensor(self.hidden_size * self.hidden_size)
@@ -69,8 +69,6 @@ class Reservoir(nn.Module):
                                    :round(
                                        self.hidden_size * self.hidden_size * (
                                                    1 - self.density))]
-                    if value.is_cuda:
-                        zero_weights = zero_weights.cuda()
                     w_hh[zero_weights] = 0
                 w_hh = w_hh.view(self.hidden_size, self.hidden_size)
                 weight_dict[key] = w_hh * (self.spectral_radius / torch.max(
@@ -91,7 +89,7 @@ class Reservoir(nn.Module):
                     self.input_size, input.size(-1)))
 
         if is_input_packed:
-            mini_batch = batch_sizes[0]
+            mini_batch = int(batch_sizes[0])
         else:
             mini_batch = input.size(0) if self.batch_first else input.size(1)
 
@@ -109,17 +107,15 @@ class Reservoir(nn.Module):
         is_packed = isinstance(input, PackedSequence)
         if is_packed:
             input, batch_sizes = input
-            max_batch_size = batch_sizes[0]
+            max_batch_size = int(batch_sizes[0])
         else:
             batch_sizes = None
             max_batch_size = input.size(0) if self.batch_first else input.size(
                 1)
 
         if hx is None:
-            hx = torch.autograd.Variable(input.data.new(self.num_layers,
-                                                        max_batch_size,
-                                                        self.hidden_size).zero_(),
-                                         requires_grad=False)
+            hx = input.new_zeros(self.num_layers,max_batch_size,
+                                 self.hidden_size, requires_grad=False)
 
         flat_weight = None
 
@@ -130,30 +126,26 @@ class Reservoir(nn.Module):
             self.hidden_size,
             num_layers=self.num_layers,
             batch_first=self.batch_first,
-            dropout=self.dropout,
             train=self.training,
-            batch_sizes=batch_sizes,
-            dropout_state=self.dropout_state,
+            variable_length=is_packed,
             flat_weight=flat_weight,
             leaking_rate=self.leaking_rate
         )
-        output, hidden = func(input, self.all_weights, hx)
+        output, hidden = func(input, self.all_weights, hx, batch_sizes)
         if is_packed:
             output = PackedSequence(output, batch_sizes)
         return output, hidden
 
-    def __repr__(self):
-        s = '{name}({input_size}, {hidden_size}'
+    def extra_repr(self):
+        s = '({input_size}, {hidden_size}'
         if self.num_layers != 1:
             s += ', num_layers={num_layers}'
         if self.bias is not True:
             s += ', bias={bias}'
         if self.batch_first is not False:
             s += ', batch_first={batch_first}'
-        if self.dropout != 0:
-            s += ', dropout={dropout}'
         s += ')'
-        return s.format(name=self.__class__.__name__, **self.__dict__)
+        return s.format(**self.__dict__)
 
     def __setstate__(self, d):
         super(Reservoir, self).__setstate__(d)
@@ -179,8 +171,8 @@ class Reservoir(nn.Module):
 
 
 def AutogradReservoir(mode, input_size, hidden_size, num_layers=1,
-                      batch_first=False, dropout=0, train=True,
-                      batch_sizes=None, dropout_state=None, flat_weight=None,
+                      batch_first=False, train=True,
+                      batch_sizes=None, variable_length=False, flat_weight=None,
                       leaking_rate=1):
     if mode == 'RES_TANH':
         cell = ResTanhCell
@@ -189,24 +181,23 @@ def AutogradReservoir(mode, input_size, hidden_size, num_layers=1,
     elif mode == 'RES_ID':
         cell = ResIdCell
 
-    if batch_sizes is None:
-        layer = (Recurrent(cell, leaking_rate),)
+    if variable_length:
+        layer = (VariableRecurrent(cell, leaking_rate),)
     else:
-        layer = (VariableRecurrent(batch_sizes, cell, leaking_rate),)
+        layer = (Recurrent(cell, leaking_rate),)
 
     func = StackedRNN(layer,
                       num_layers,
                       False,
-                      dropout=dropout,
                       train=train)
 
-    def forward(input, weight, hidden):
+    def forward(input, weight, hidden, batch_sizes):
         if batch_first and batch_sizes is None:
             input = input.transpose(0, 1)
 
-        nexth, output = func(input, hidden, weight)
+        nexth, output = func(input, hidden, weight, batch_sizes)
 
-        if batch_first and batch_sizes is None:
+        if batch_first and not variable_length:
             output = output.transpose(0, 1)
 
         return output, nexth
@@ -215,7 +206,7 @@ def AutogradReservoir(mode, input_size, hidden_size, num_layers=1,
 
 
 def Recurrent(inner, leaking_rate):
-    def forward(input, hidden, weight):
+    def forward(input, hidden, weight, batch_sizes):
         output = []
         steps = range(input.size(0))
         for i in steps:
@@ -230,8 +221,8 @@ def Recurrent(inner, leaking_rate):
     return forward
 
 
-def VariableRecurrent(batch_sizes, inner, leaking_rate):
-    def forward(input, hidden, weight):
+def VariableRecurrent(inner, leaking_rate):
+    def forward(input, hidden, weight, batch_sizes):
         output = []
         input_offset = 0
         last_batch_size = batch_sizes[0]
@@ -269,11 +260,11 @@ def VariableRecurrent(batch_sizes, inner, leaking_rate):
     return forward
 
 
-def StackedRNN(inners, num_layers, lstm=False, dropout=0, train=True):
+def StackedRNN(inners, num_layers, lstm=False, train=True):
     num_directions = len(inners)
     total_layers = num_layers * num_directions
 
-    def forward(input, hidden, weight):
+    def forward(input, hidden, weight, batch_sizes):
         assert (len(weight) == total_layers)
         next_hidden = []
         all_layers_output = []
@@ -283,16 +274,12 @@ def StackedRNN(inners, num_layers, lstm=False, dropout=0, train=True):
             for j, inner in enumerate(inners):
                 l = i * num_directions + j
 
-                hy, output = inner(input, hidden[l], weight[l])
+                hy, output = inner(input, hidden[l], weight[l], batch_sizes)
                 next_hidden.append(hy)
                 all_output.append(output)
 
             input = torch.cat(all_output, input.dim() - 1)
             all_layers_output.append(input)
-
-            if dropout != 0 and i < num_layers - 1:
-                input = F.dropout(input, p=dropout, training=train,
-                                  inplace=False)
 
         all_layers_output = torch.cat(all_layers_output, -1)
         next_hidden = torch.cat(next_hidden, 0).view(
