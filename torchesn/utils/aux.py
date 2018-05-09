@@ -39,18 +39,18 @@ def washout_tensor(tensor, washout, seq_lengths, batch_first=False):
     tensor = tensor.transpose(0, 1) if batch_first else tensor.clone()
     if type(seq_lengths) == list:
         seq_lengths = seq_lengths.copy()
-        max_len = max(seq_lengths)
     if type(seq_lengths) == torch.Tensor:
         seq_lengths = seq_lengths.clone()
-        max_len = max(seq_lengths).item()
 
     for b in range(tensor.size(1)):
         if washout[b] > 0:
-            if isinstance(tensor, torch.autograd.Variable):
-                tensor[:seq_lengths[b] - washout[b], b] = tensor[washout[b]:seq_lengths[b], b]
-            else:
-                tensor[:seq_lengths[b] - washout[b], b] = tensor[washout[b]:seq_lengths[b], b]
+            tensor[:seq_lengths[b] - washout[b], b] = tensor[washout[b]:seq_lengths[b], b]
             tensor[seq_lengths[b] - washout[b]:, b] = 0
             seq_lengths[b] -= washout[b]
+
+    if type(seq_lengths) == list:
+        max_len = max(seq_lengths)
+    else:
+        max_len = max(seq_lengths).item()
 
     return tensor[:max_len], seq_lengths
