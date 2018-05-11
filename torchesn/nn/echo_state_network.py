@@ -132,9 +132,9 @@ class ESN(nn.Module):
                                                           batch_first=self.batch_first)
             else:
                 if self.batch_first:
-                    seq_lengths = output.size(0) * [output.size(1) - washout]
+                    seq_lengths = output.size(0) * [output.size(1) - washout[0]]
                 else:
-                    seq_lengths = output.size(1) * [output.size(0) - washout]
+                    seq_lengths = output.size(1) * [output.size(0) - washout[0]]
 
             if self.batch_first:
                 output = output.transpose(0, 1)
