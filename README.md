@@ -58,7 +58,7 @@ For classification, just use one of the previous methods and pass 'mean' or
 model = ESN(input_size, hidden_size, output_size, output_steps='mean')
 ```
 
-For more information check docstrings or section 4.7 of "A Practical Guide to Applying
+For more information see docstrings or section 4.7 of "A Practical Guide to Applying
 Echo State Networks" by Mantas Lukoševičius.
 
 ### Online training (PyTorch optimizer)
