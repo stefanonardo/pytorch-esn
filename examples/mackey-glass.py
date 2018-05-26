@@ -1,6 +1,7 @@
 import torch.nn
 import numpy as np
-from torchesn import nn, utils
+from torchesn.nn import ESN
+from torchesn import utils
 import time
 
 device = torch.device('cuda')
@@ -22,6 +23,7 @@ tsX = X_data[5000:]
 tsY = Y_data[5000:]
 
 washout = [500]
+input_size = output_size = 1
 hidden_size = 500
 loss_fcn = torch.nn.MSELoss()
 
@@ -30,7 +32,7 @@ start = time.time()
 # Training
 trY_flat = utils.prepare_target(trY.clone(), [trX.size(0)], washout)
 
-model = nn.ESN(1, hidden_size, 1)
+model = ESN(input_size, hidden_size, output_size)
 model.to(device)
 
 model(trX, washout, None, trY_flat)
@@ -40,4 +42,4 @@ print("Training error:", loss_fcn(output, trY[washout[0]:]).item())
 # Test
 output, hidden = model(tsX, [0], hidden)
 print("Test error:", loss_fcn(output, tsY).item())
-
+print("Ended in", time.time() - start, "seconds.")
