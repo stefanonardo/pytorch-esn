@@ -25,7 +25,7 @@ class ESN(nn.Module):
         spectral_radius: Desired spectral radius of recurrent weight matrix.
             Default: 0.9
         w_ih_scale: Scale factor for first layer's input weights (w_ih_l0). It
-            can be a number or a list of size '1 + input_size' and first element
+            can be a number or a tensor of size '1 + input_size' and first element
             is the bias' scale factor. Default: 1
         lambda_reg: Ridge regression's shrinkage parameter. Default: 1
         density: Recurrent weight matrix's density. Default: 1
@@ -92,6 +92,12 @@ class ESN(nn.Module):
         self.batch_first = batch_first
         self.leaking_rate = leaking_rate
         self.spectral_radius = spectral_radius
+        if type(w_ih_scale) != torch.Tensor:
+            self.w_ih_scale = torch.ones(input_size + 1)
+            self.w_ih_scale *= w_ih_scale
+        else:
+            self.w_ih_scale = w_ih_scale
+
         self.lambda_reg = lambda_reg
         self.density = density
         self.w_io = w_io
@@ -103,7 +109,8 @@ class ESN(nn.Module):
 
         self.reservoir = Reservoir(mode, input_size, hidden_size, num_layers,
                                    leaking_rate, spectral_radius,
-                                   w_ih_scale, density, batch_first=batch_first)
+                                   self.w_ih_scale, density,
+                                   batch_first=batch_first)
 
         if w_io:
             self.readout = nn.Linear(input_size + hidden_size * num_layers,
@@ -132,9 +139,9 @@ class ESN(nn.Module):
                                                           batch_first=self.batch_first)
             else:
                 if self.batch_first:
-                    seq_lengths = output.size(0) * [output.size(1) - washout[0]]
+                    seq_lengths = output.size(0) * [output.size(1)]
                 else:
-                    seq_lengths = output.size(1) * [output.size(0) - washout[0]]
+                    seq_lengths = output.size(1) * [output.size(0)]
 
             if self.batch_first:
                 output = output.transpose(0, 1)
