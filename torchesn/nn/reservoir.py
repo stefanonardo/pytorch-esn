@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torch.nn.utils.rnn import PackedSequence
-import random
 import torch.sparse
 
 
@@ -291,7 +290,7 @@ def StackedRNN(inners, num_layers, lstm=False, train=True):
 
 
 def ResTanhCell(input, hidden, leaking_rate, w_ih, w_hh, b_ih=None):
-    hy_ = F.tanh(F.linear(input, w_ih, b_ih) + F.linear(hidden, w_hh))
+    hy_ = torch.tanh(F.linear(input, w_ih, b_ih) + F.linear(hidden, w_hh))
     hy = (1 - leaking_rate) * hidden + leaking_rate * hy_
     return hy
 

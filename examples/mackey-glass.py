@@ -27,19 +27,20 @@ input_size = output_size = 1
 hidden_size = 500
 loss_fcn = torch.nn.MSELoss()
 
-start = time.time()
+if __name__ == "__main__":
+    start = time.time()
 
-# Training
-trY_flat = utils.prepare_target(trY.clone(), [trX.size(0)], washout)
+    # Training
+    trY_flat = utils.prepare_target(trY.clone(), [trX.size(0)], washout)
 
-model = ESN(input_size, hidden_size, output_size)
-model.to(device)
+    model = ESN(input_size, hidden_size, output_size)
+    model.to(device)
 
-model(trX, washout, None, trY_flat)
-output, hidden = model(trX, washout)
-print("Training error:", loss_fcn(output, trY[washout[0]:]).item())
+    model(trX, washout, None, trY_flat)
+    output, hidden = model(trX, washout)
+    print("Training error:", loss_fcn(output, trY[washout[0]:]).item())
 
-# Test
-output, hidden = model(tsX, [0], hidden)
-print("Test error:", loss_fcn(output, tsY).item())
-print("Ended in", time.time() - start, "seconds.")
+    # Test
+    output, hidden = model(tsX, [0], hidden)
+    print("Test error:", loss_fcn(output, tsY).item())
+    print("Ended in", time.time() - start, "seconds.")
