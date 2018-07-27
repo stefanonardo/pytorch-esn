@@ -169,6 +169,14 @@ class ESN(nn.Module):
                             if seq_lengths[i] < output.size(0):
                                 output[seq_lengths[i]:, i] = 0
 
+                    if self.batch_first:
+                        output = output.transpose(0, 1)
+
+                    # Uncomment if you want packed output.
+                    # if is_packed:
+                    #     output = pack_padded_sequence(output, seq_lengths,
+                    #                                   batch_first=self.batch_first)
+
                     return output, hidden
 
             else:
@@ -211,16 +219,6 @@ class ESN(nn.Module):
                     self.readout.weight = nn.Parameter(W[:, 1:])
 
                 return None, None
-
-            if self.batch_first:
-                output = output.transpose(0, 1)
-
-            # Uncomment if you want packed output.
-            # if is_packed:
-            #     output = pack_padded_sequence(output, seq_lengths,
-            #                                   batch_first=self.batch_first)
-
-            return output, hidden
 
     def fit(self):
         if re.fullmatch('gd|svd', self.readout_training):
