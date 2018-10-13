@@ -30,13 +30,14 @@ class ESN(nn.Module):
         density: Recurrent weight matrix's density. Default: 1
         w_io: If 'True', then the network uses trainable input-to-output
             connections. Default: ``False``
-        readout_training: Readout's traning algorithm ['gd'|'svd'|'ch'].
+        readout_training: Readout's traning algorithm ['gd'|'svd'|'cholesky'|'inv'].
             If 'gd', gradients are accumulated during backward
-            pass. If 'svd' or 'cholesky', the network will learn readout's
+            pass. If 'svd', 'cholesky' or 'inv', the network will learn readout's
             parameters during the forward pass using ridge regression. The
-            coefficients are computed using SVD or Cholesky decomposition.
-            Gradient descent and Cholesky decomposition permit the usage
-            of mini-batches to train the readout.
+            coefficients are computed using SVD, Cholesky decomposition or
+            standard ridge regression formula. 'gd', 'cholesky' and 'inv'
+            permit the usage of mini-batches to train the readout.
+            If 'inv' and matrix is singular, pseudoinverse is used.
         output_steps: defines how the reservoir's output will be used by ridge
             regression method ['all', 'mean', 'last'].
             If 'all', the entire reservoir output matrix will be used.
@@ -100,7 +101,7 @@ class ESN(nn.Module):
         self.lambda_reg = lambda_reg
         self.density = density
         self.w_io = w_io
-        if re.fullmatch('gd|svd|cholesky', readout_training):
+        if re.fullmatch('gd|svd|cholesky|inv', readout_training):
             self.readout_training = readout_training
         else:
             raise ValueError("Unknown readout training algorithm '{}'".format(
@@ -217,6 +218,13 @@ class ESN(nn.Module):
 
                     self.readout.bias = nn.Parameter(W[:, 0])
                     self.readout.weight = nn.Parameter(W[:, 1:])
+                elif self.readout_training == 'inv':
+                    if self.XTX is None:
+                        self.XTX = torch.mm(X.t(), X)
+                        self.XTy = torch.mm(X.t(), target)
+                    else:
+                        self.XTX += torch.mm(X.t(), X)
+                        self.XTy += torch.mm(X.t(), target)
 
                 return None, None
 
@@ -233,6 +241,23 @@ class ESN(nn.Module):
 
             self.readout.bias = nn.Parameter(W[:, 0])
             self.readout.weight = nn.Parameter(W[:, 1:])
+        elif self.readout_training == 'inv':
+            I = (self.lambda_reg * torch.eye(self.XTX.size(0))).to(
+                self.XTX.device)
+            A = self.XTX + I
+
+            if torch.det(A) != 0:
+                W = torch.mm(torch.inverse(A), self.XTy).t()
+            else:
+                pinv = np.linalg.pinv(A.cpu().numpy())
+                pinv = torch.from_numpy(pinv).to(self.XTX.device)
+                W = torch.mm(pinv, self.XTy).t()
+
+            self.readout.bias = nn.Parameter(W[:, 0])
+            self.readout.weight = nn.Parameter(W[:, 1:])
+
+            self.XTX = None
+            self.XTy = None
 
     def reset_parameters(self):
         self.reservoir.reset_parameters()

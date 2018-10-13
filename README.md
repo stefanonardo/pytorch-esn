@@ -1,6 +1,6 @@
 # PyTorch-ESN
 
-PyTorch-ESN is a PyTorch module, written in Python, implementing Echo State Networks with leaky-integrated units. ESN's implementation with more than one layer is based on [DeepESN](https://arxiv.org/abs/1712.04323). The readout layer is trainable by ridge regression or by PyTorch's optimizers.
+PyTorch-ESN is a PyTorch module, written in Python, implementing Echo State Networks with leaky-integrated units. ESN's implementation with more than one layer is based on [DeepESN](https://arxiv.org/abs/1712.04323). The readout is trainable by ridge regression or by PyTorch's optimizers.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ model(input, washout, hidden, flat_target)
 output, hidden = model(input, washout, hidden)
 ```
 
-#### Cholesky
+#### Cholesky or inverse
 ```python
 from torchesn.nn import ESN
 from torchesn.utils import prepare_target
