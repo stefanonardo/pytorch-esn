@@ -37,6 +37,7 @@ if __name__ == "__main__":
     model.to(device)
 
     model(trX, washout, None, trY_flat)
+    model.fit()
     output, hidden = model(trX, washout)
     print("Training error:", loss_fcn(output, trY[washout[0]:]).item())
 
