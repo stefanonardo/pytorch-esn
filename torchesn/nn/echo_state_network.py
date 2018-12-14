@@ -3,7 +3,6 @@ import torch.nn as nn
 from torch.nn.utils.rnn import PackedSequence, pad_packed_sequence
 from .reservoir import Reservoir
 from ..utils import washout_tensor
-import re
 import numpy as np
 
 
@@ -102,7 +101,7 @@ class ESN(nn.Module):
         self.lambda_reg = lambda_reg
         self.density = density
         self.w_io = w_io
-        if re.fullmatch('gd|svd|cholesky|inv', readout_training):
+        if readout_training in {'gd', 'svd', 'cholesky', 'inv'}:
             self.readout_training = readout_training
         else:
             raise ValueError("Unknown readout training algorithm '{}'".format(
@@ -121,7 +120,7 @@ class ESN(nn.Module):
         if readout_training == 'offline':
             self.readout.weight.requires_grad = False
 
-        if re.fullmatch('all|mean|last', output_steps):
+        if output_steps in {'all', 'mean', 'last'}:
             self.output_steps = output_steps
         else:
             raise ValueError("Unknown task '{}'".format(
@@ -230,7 +229,7 @@ class ESN(nn.Module):
                 return None, None
 
     def fit(self):
-        if re.fullmatch('gd|svd', self.readout_training):
+        if self.readout_training in {'gd' ,'svd'}:
             return
 
         if self.readout_training == 'cholesky':
@@ -250,8 +249,7 @@ class ESN(nn.Module):
             if torch.det(A) != 0:
                 W = torch.mm(torch.inverse(A), self.XTy).t()
             else:
-                pinv = np.linalg.pinv(A.cpu().numpy())
-                pinv = torch.from_numpy(pinv).to(self.XTX.device)
+                pinv = torch.pinverse(A)
                 W = torch.mm(pinv, self.XTy).t()
 
             self.readout.bias = nn.Parameter(W[:, 0])
