@@ -35,7 +35,7 @@ def prepare_target(target, seq_lengths, washout, batch_first=False):
     return new_target
 
 
-def washout_tensor(tensor, washout, seq_lengths, batch_first=False):
+def washout_tensor(tensor, washout, seq_lengths, bidirectional=False, batch_first=False):
     tensor = tensor.transpose(0, 1) if batch_first else tensor.clone()
     if type(seq_lengths) == list:
         seq_lengths = seq_lengths.copy()
@@ -44,9 +44,14 @@ def washout_tensor(tensor, washout, seq_lengths, batch_first=False):
 
     for b in range(tensor.size(1)):
         if washout[b] > 0:
-            tensor[:seq_lengths[b] - washout[b], b] = tensor[washout[b]:seq_lengths[b], b]
+            tmp = tensor[washout[b]:seq_lengths[b], b]
+            tensor[:seq_lengths[b] - washout[b], b] = tmp
             tensor[seq_lengths[b] - washout[b]:, b] = 0
             seq_lengths[b] -= washout[b]
+
+            if bidirectional:
+                tensor[seq_lengths[b] - washout[b]:, b] = 0
+                seq_lengths[b] -= washout[b]
 
     if type(seq_lengths) == list:
         max_len = max(seq_lengths)
