@@ -65,7 +65,7 @@ class Reservoir(nn.Module):
                     zero_weights = torch.randperm(
                         int(self.hidden_size * self.hidden_size))
                     zero_weights = zero_weights[
-                                   :round(
+                                   :int(
                                        self.hidden_size * self.hidden_size * (
                                                    1 - self.density))]
                     w_hh[zero_weights] = 0

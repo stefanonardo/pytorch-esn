@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(name='pytorch-esn',
-      version='1.2.2',
+      version='1.2.3',
       packages=find_packages(),
       install_requires=[
           'torch',
