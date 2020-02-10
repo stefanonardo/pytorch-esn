@@ -3,7 +3,6 @@ import torch.nn as nn
 from torch.nn.utils.rnn import PackedSequence, pad_packed_sequence
 from .reservoir import Reservoir
 from ..utils import washout_tensor
-import numpy as np
 
 
 class ESN(nn.Module):
