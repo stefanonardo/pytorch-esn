@@ -1,3 +1,8 @@
+"""
+This examples is not intended to be optimized. Its purpose is to show how to handle
+big datasets with multiple sequences. The accuracy should be around 10%.
+"""
+
 import re
 import torch
 import torch.nn as nn
@@ -99,9 +104,7 @@ class Reservoir(nn.Module):
             mini_batch = int(mini_batch)
         else:
             mini_batch = input.size(0) if self.batch_first else input.size(1)
-        num_directions = 2 if self.bidirectional else 1
-        expected_hidden_size = (self.num_layers * num_directions,
-                                mini_batch, self.hidden_size)
+        expected_hidden_size = (self.num_layers, mini_batch, self.hidden_size)
         return expected_hidden_size
 
     def check_hidden_size(self, hx, expected_hidden_size, msg='Expected hidden size {}, got {}'):
