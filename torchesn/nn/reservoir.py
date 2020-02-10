@@ -6,6 +6,11 @@ from torch.nn.utils.rnn import PackedSequence
 import torch.sparse
 
 
+def apply_permutation(tensor, permutation, dim=1):
+    # type: (Tensor, Tensor, int) -> Tensor
+    return tensor.index_select(dim, permutation)
+
+
 class Reservoir(nn.Module):
 
     def __init__(self, mode, input_size, hidden_size, num_layers, leaking_rate,
@@ -75,9 +80,9 @@ class Reservoir(nn.Module):
 
         self.load_state_dict(weight_dict)
 
-    def check_forward_args(self, input, hidden, batch_sizes):
-        is_input_packed = batch_sizes is not None
-        expected_input_dim = 2 if is_input_packed else 3
+    def check_input(self, input, batch_sizes):
+        # type: (Tensor, Optional[Tensor]) -> None
+        expected_input_dim = 2 if batch_sizes is not None else 3
         if input.dim() != expected_input_dim:
             raise RuntimeError(
                 'input must have {} dimensions, got {}'.format(
@@ -87,34 +92,54 @@ class Reservoir(nn.Module):
                 'input.size(-1) must be equal to input_size. Expected {}, got {}'.format(
                     self.input_size, input.size(-1)))
 
-        if is_input_packed:
-            mini_batch = int(batch_sizes[0])
+    def get_expected_hidden_size(self, input, batch_sizes):
+        # type: (Tensor, Optional[Tensor]) -> Tuple[int, int, int]
+        if batch_sizes is not None:
+            mini_batch = batch_sizes[0]
+            mini_batch = int(mini_batch)
         else:
             mini_batch = input.size(0) if self.batch_first else input.size(1)
+        num_directions = 2 if self.bidirectional else 1
+        expected_hidden_size = (self.num_layers * num_directions,
+                                mini_batch, self.hidden_size)
+        return expected_hidden_size
 
-        expected_hidden_size = (self.num_layers, mini_batch, self.hidden_size)
+    def check_hidden_size(self, hx, expected_hidden_size, msg='Expected hidden size {}, got {}'):
+        # type: (Tensor, Tuple[int, int, int], str) -> None
+        if hx.size() != expected_hidden_size:
+            raise RuntimeError(msg.format(expected_hidden_size, tuple(hx.size())))
 
-        def check_hidden_size(hx, expected_hidden_size,
-                              msg='Expected hidden size {}, got {}'):
-            if tuple(hx.size()) != expected_hidden_size:
-                raise RuntimeError(
-                    msg.format(expected_hidden_size, tuple(hx.size())))
+    def check_forward_args(self, input, hidden, batch_sizes):
+        # type: (Tensor, Tensor, Optional[Tensor]) -> None
+        self.check_input(input, batch_sizes)
+        expected_hidden_size = self.get_expected_hidden_size(input, batch_sizes)
 
-        check_hidden_size(hidden, expected_hidden_size)
+        self.check_hidden_size(hidden, expected_hidden_size)
+
+    def permute_hidden(self, hx, permutation):
+        # type: (Tensor, Optional[Tensor]) -> Tensor
+        if permutation is None:
+            return hx
+        return apply_permutation(hx, permutation)
 
     def forward(self, input, hx=None):
         is_packed = isinstance(input, PackedSequence)
         if is_packed:
-            input, batch_sizes = input
+            input, batch_sizes, sorted_indices, unsorted_indices = input
             max_batch_size = int(batch_sizes[0])
         else:
             batch_sizes = None
-            max_batch_size = input.size(0) if self.batch_first else input.size(
-                1)
+            max_batch_size = input.size(0) if self.batch_first else input.size(1)
+            sorted_indices = None
+            unsorted_indices = None
 
         if hx is None:
-            hx = input.new_zeros(self.num_layers,max_batch_size,
+            hx = input.new_zeros(self.num_layers, max_batch_size,
                                  self.hidden_size, requires_grad=False)
+        else:
+            # Each batch of the hidden state should match the input sequence that
+            # the user believes he/she is passing in.
+            hx = self.permute_hidden(hx, sorted_indices)
 
         flat_weight = None
 
@@ -132,8 +157,8 @@ class Reservoir(nn.Module):
         )
         output, hidden = func(input, self.all_weights, hx, batch_sizes)
         if is_packed:
-            output = PackedSequence(output, batch_sizes)
-        return output, hidden
+            output = PackedSequence(output, batch_sizes, sorted_indices, unsorted_indices)
+        return output, self.permute_hidden(hidden, unsorted_indices)
 
     def extra_repr(self):
         s = '({input_size}, {hidden_size}'

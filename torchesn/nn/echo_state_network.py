@@ -229,11 +229,11 @@ class ESN(nn.Module):
                 return None, None
 
     def fit(self):
-        if self.readout_training in {'gd' ,'svd'}:
+        if self.readout_training in {'gd', 'svd'}:
             return
 
         if self.readout_training == 'cholesky':
-            W = torch.gesv(self.XTy,
+            W = torch.solve(self.XTy,
                            self.XTX + self.lambda_reg * torch.eye(
                                self.XTX.size(0), device=self.XTX.device))[0].t()
             self.XTX = None
