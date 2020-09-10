@@ -44,7 +44,7 @@ def washout_tensor(tensor, washout, seq_lengths, bidirectional=False, batch_firs
 
     for b in range(tensor.size(1)):
         if washout[b] > 0:
-            tmp = tensor[washout[b]:seq_lengths[b], b]
+            tmp = tensor[washout[b]:seq_lengths[b], b].clone()
             tensor[:seq_lengths[b] - washout[b], b] = tmp
             tensor[seq_lengths[b] - washout[b]:, b] = 0
             seq_lengths[b] -= washout[b]
