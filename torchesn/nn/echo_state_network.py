@@ -218,6 +218,7 @@ class ESN(nn.Module):
                     self.readout.bias = nn.Parameter(W[:, 0])
                     self.readout.weight = nn.Parameter(W[:, 1:])
                 elif self.readout_training == 'inv':
+                    self.X = X
                     if self.XTX is None:
                         self.XTX = torch.mm(X.t(), X)
                         self.XTy = torch.mm(X.t(), target)
@@ -245,11 +246,14 @@ class ESN(nn.Module):
                 self.XTX.device)
             A = self.XTX + I
 
-            if torch.det(A) != 0:
+            col = self.X.size(1)
+            orig_rank = torch.matrix_rank(A).item()
+            tag = 'Inverse' if orig_rank == col else 'Pseudo-inverse'
+            
+            if tag == 'Inverse':
                 W = torch.mm(torch.inverse(A), self.XTy).t()
             else:
-                pinv = torch.pinverse(A)
-                W = torch.mm(pinv, self.XTy).t()
+                W = torch.mm(torch.pinverse(A), self.XTy).t()
 
             self.readout.bias = nn.Parameter(W[:, 0])
             self.readout.weight = nn.Parameter(W[:, 1:])
