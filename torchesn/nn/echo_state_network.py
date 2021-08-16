@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import PackedSequence, pad_packed_sequence
+
 from .reservoir import Reservoir
 from ..utils import washout_tensor
 
@@ -127,6 +128,7 @@ class ESN(nn.Module):
 
         self.XTX = None
         self.XTy = None
+        self.X = None
 
     def forward(self, input, washout, h_0=None, target=None):
         with torch.no_grad():
@@ -245,12 +247,9 @@ class ESN(nn.Module):
             I = (self.lambda_reg * torch.eye(self.XTX.size(0))).to(
                 self.XTX.device)
             A = self.XTX + I
+            X_rank = torch.linalg.matrix_rank(A).item()
 
-            col = self.X.size(1)
-            orig_rank = torch.matrix_rank(A).item()
-            tag = 'Inverse' if orig_rank == col else 'Pseudo-inverse'
-            
-            if tag == 'Inverse':
+            if X_rank == self.X.size(0):
                 W = torch.mm(torch.inverse(A), self.XTy).t()
             else:
                 W = torch.mm(torch.pinverse(A), self.XTy).t()
@@ -264,5 +263,3 @@ class ESN(nn.Module):
     def reset_parameters(self):
         self.reservoir.reset_parameters()
         self.readout.reset_parameters()
-
-
