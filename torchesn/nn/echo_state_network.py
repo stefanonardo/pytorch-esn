@@ -127,6 +127,7 @@ class ESN(nn.Module):
 
         self.XTX = None
         self.XTy = None
+        self.X = None
 
     def forward(self, input, washout, h_0=None, target=None):
         with torch.no_grad():
@@ -218,6 +219,7 @@ class ESN(nn.Module):
                     self.readout.bias = nn.Parameter(W[:, 0])
                     self.readout.weight = nn.Parameter(W[:, 1:])
                 elif self.readout_training == 'inv':
+                    self.X = X
                     if self.XTX is None:
                         self.XTX = torch.mm(X.t(), X)
                         self.XTy = torch.mm(X.t(), target)
@@ -244,12 +246,12 @@ class ESN(nn.Module):
             I = (self.lambda_reg * torch.eye(self.XTX.size(0))).to(
                 self.XTX.device)
             A = self.XTX + I
+            X_rank = torch.linalg.matrix_rank(A).item()
 
-            if torch.det(A) != 0:
+            if X_rank == self.X.size(0):
                 W = torch.mm(torch.inverse(A), self.XTy).t()
             else:
-                pinv = torch.pinverse(A)
-                W = torch.mm(pinv, self.XTy).t()
+                W = torch.mm(torch.pinverse(A), self.XTy).t()
 
             self.readout.bias = nn.Parameter(W[:, 0])
             self.readout.weight = nn.Parameter(W[:, 1:])
@@ -260,5 +262,3 @@ class ESN(nn.Module):
     def reset_parameters(self):
         self.reservoir.reset_parameters()
         self.readout.reset_parameters()
-
-
