@@ -80,7 +80,7 @@ class Reservoir(nn.Module):
                                                    1 - self.density))]
                     w_hh[zero_weights] = 0
                 w_hh = w_hh.view(self.hidden_size, self.hidden_size)
-                abs_eigs = (torch.eig(w_hh)[0] ** 2).sum(1).sqrt()
+                abs_eigs = torch.abs(torch.linalg.eigvals(w_hh))
                 weight_dict[key] = w_hh * (self.spectral_radius / torch.max(abs_eigs))
 
         self.load_state_dict(weight_dict)
