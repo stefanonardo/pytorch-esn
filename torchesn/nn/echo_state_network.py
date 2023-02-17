@@ -234,9 +234,9 @@ class ESN(nn.Module):
             return
 
         if self.readout_training == 'cholesky':
-            W = torch.solve(self.XTy,
-                           self.XTX + self.lambda_reg * torch.eye(
-                               self.XTX.size(0), device=self.XTX.device))[0].t()
+            W = torch.linalg.solve(self.XTy,
+                                   self.XTX + self.lambda_reg * torch.eye(
+                                       self.XTX.size(0), device=self.XTX.device))[0].t()
             self.XTX = None
             self.XTy = None
 
