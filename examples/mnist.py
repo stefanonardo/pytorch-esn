@@ -1,4 +1,37 @@
-import torch.nn
+
+import os
+"""
+MNIST Digit Classification using Echo State Network (ESN)
+
+This script demonstrates how to use the PyTorch ESN library with larger datasets
+that require batching to fit in memory, using MNIST as an example.
+
+Key Features:
+- Shows ESN usage with datasets too large to fit entirely in memory
+- Demonstrates proper batching techniques for ESN training and inference
+- Uses PyTorch DataLoader for efficient memory management
+- Implements batch-wise processing for both training and evaluation
+- Handles memory constraints through configurable batch sizes
+
+The script processes MNIST's 60,000 training samples in batches, showing how ESNs
+can scale to larger datasets without loading everything into memory at once.
+
+Functions:
+    Accuracy_Correct(y_pred, y_true): Calculates the number of correct predictions
+    one_hot(y, output_dim): Converts integer labels to one-hot encoded vectors
+    reshape_batch(batch): Reshapes image batches for sequential processing
+
+Parameters:
+    batch_size (int): Number of samples per batch - tune according to available memory
+    input_size (int): Dimensionality of input features (1)
+    hidden_size (int): Number of neurons in the ESN reservoir (500)
+    output_size (int): Number of output classes (10 for digits 0-9)
+    washout_rate (float): Fraction of initial timesteps to discard (0.2)
+
+NOTE: THIS IS A DEMONSTRATION OF LIBRARY USAGE WITH LARGER DATASETS REQUIRING BATCHING.
+THE HYPERPARAMETERS ARE NOT OPTIMIZED FOR ACCURACY.
+"""
+import torch
 from torchvision import datasets, transforms
 from torchesn.nn import ESN
 import time
@@ -24,7 +57,7 @@ def reshape_batch(batch):
     return batch.transpose(0, 1).transpose(0, 2)
 
 
-device = torch.device('cuda')
+device = torch.device('cpu')
 dtype = torch.float
 torch.set_default_dtype(dtype)
 loss_fcn = Accuracy_Correct
@@ -36,15 +69,16 @@ output_size = 10
 washout_rate = 0.2
 
 if __name__ == "__main__":
+    data_path = os.path.join(os.path.dirname(__file__), 'datasets')
     train_iter = torch.utils.data.DataLoader(
-        datasets.MNIST('./datasets', train=True, download=True,
+        datasets.MNIST(data_path, train=True, download=True,
                        transform=transforms.Compose([
                            transforms.ToTensor(),
                            transforms.Normalize((0.1307,), (0.3081,))])),
         batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
 
     test_iter = torch.utils.data.DataLoader(
-        datasets.MNIST('./datasets', train=False,
+        datasets.MNIST(data_path, train=False,
                        transform=transforms.Compose([
                            transforms.ToTensor(),
                            transforms.Normalize((0.1307,), (0.3081,))])),
