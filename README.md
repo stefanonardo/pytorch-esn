@@ -156,7 +156,7 @@ python mnist.py
 ```python
 ESN(input_size, hidden_size, output_size, num_layers=1, bias=True,
     output_steps='all', readout_training='svd', reservoir_bias=True,
-    leaky_rate=1.0, spectral_radius=0.9, input_scaling=1.0,
+    leaking_rate=1.0, spectral_radius=0.9, input_scaling=1.0,
     connectivity=0.1, regularization=1e-8)
 ```
 
@@ -175,7 +175,7 @@ ESN(input_size, hidden_size, output_size, num_layers=1, bias=True,
   - `'cholesky'`: Cholesky decomposition (supports batching)
   - `'inv'`: Matrix inversion (supports batching)
   - `'gradient'`: Gradient-based optimization
-- **`leaky_rate`** (float, default=1.0): Leaky integration rate (1.0 = no leakage)
+- **`leaking_rate`** (float, default=1.0): Leaky integration rate (1.0 = no leakage)
 - **`spectral_radius`** (float, default=0.9): Spectral radius of reservoir weights
 - **`input_scaling`** (float, default=1.0): Scaling factor for input weights
 - **`connectivity`** (float, default=0.1): Sparsity of reservoir connections
