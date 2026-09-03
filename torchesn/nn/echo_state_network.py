@@ -416,3 +416,10 @@ class ESN(nn.Module):
         """
         self.reservoir.reset_parameters()
         self.readout.reset_parameters()
+
+        # Clear the accumulated ridge-regression statistics, as the docstring
+        # promises. Without this, a reset followed by re-accumulation and fit()
+        # solves the readout on the union of the pre- and post-reset data.
+        self.XTX = None
+        self.XTy = None
+        self.X = None
